@@ -4,7 +4,7 @@
   "adults": 2,
   "currency": "USD",
   "airlines": {"United": "UA", "American": "AA"},
-  "cabins": {"Premium Economy": 3, "Business": 4},
+  "cabins": {"Premium Economy": 2, "Business": 3},
   "date_windows": [
     {"label": "Apr 13-20, 2027", "outbound": "2027-04-13", "return": "2027-04-20"},
     {"label": "Apr 18-25, 2027", "outbound": "2027-04-18", "return": "2027-04-25"}
