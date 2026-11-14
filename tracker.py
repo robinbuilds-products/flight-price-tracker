@@ -130,12 +130,14 @@ def build_workbook(rows, cfg):
     wb.save(WORKBOOK)
 
 
-def send_email(subject, body, attach):
+def send_email(subject, body, attach, html=None):
     host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
     user, pwd, to = os.environ["SMTP_USER"], os.environ["SMTP_PASSWORD"], os.environ["ALERT_EMAIL"]
     msg = EmailMessage()
     msg["Subject"], msg["From"], msg["To"] = subject, user, to
     msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype="html")
     if attach and attach.exists():
         msg.add_attachment(attach.read_bytes(), maintype="application",
                            subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=attach.name)
@@ -143,6 +145,42 @@ def send_email(subject, body, attach):
         s.starttls(context=ssl.create_default_context())
         s.login(user, pwd)
         s.send_message(msg)
+
+
+def build_message(today, new_rows, cfg):
+    """Friendly automated alert email: returns (plain_text, html)."""
+    date_text = f"{today.strftime('%B')} {today.day}, {today.year}"
+    lines = []
+    for win in cfg["date_windows"]:
+        items = sorted([r for r in new_rows if r["window"] == win["label"]], key=lambda r: (r["airline"], r["cabin"]))
+        if items:
+            fares = ", ".join(f"{r['airline']} {r['cabin']} ${float(r['price_total']):,.0f}" for r in items)
+            lines.append(f"{win['label'].split(',')[0]}: {fares}")
+    parts = []
+    if cfg.get("target_price_total"):
+        parts.append(f"a fare is ${cfg['target_price_total']:,.0f} or less for {cfg['adults']} travelers")
+    parts.append(f"a price drops {cfg['drop_threshold_pct']:g}% or more from the day before")
+    level = "You'll get this email whenever " + ", or when ".join(parts) + "."
+    cabins_found = {r["cabin"] for r in new_rows}
+    why = ""
+    if "Premium Economy" not in cabins_found:
+        why = ("Right now, only Business fares are showing for these flights. Premium Economy isn't being offered "
+               "on this route for your dates. If it becomes available, it will appear in this email automatically.")
+    head = "This is an automated email from your flight price tracker."
+    intro = f"Good news, your fares are in. Here's what we found for St. Louis to St. Thomas today, {date_text}."
+    tail = ("The attached workbook shows how each price has moved. Please double-check the fare on the airline's "
+            "site before you book.")
+    stop = "To stop these emails, reply to this email and Robin will turn them off."
+    text = [head, "", intro, ""] + [f"- {l}" for l in lines] + ["", "Your alert level: " + level, ""]
+    if why:
+        text += ["Why only Business? " + why, ""]
+    text += [tail, "", stop]
+    html = [f"<p><b>{head}</b></p>", f"<p>{intro}</p>", "<ul>" + "".join(f"<li>{l}</li>" for l in lines) + "</ul>",
+            f"<p><b>Your alert level:</b> {level}</p>"]
+    if why:
+        html.append(f"<p><b>Why only Business?</b> {why}</p>")
+    html += [f"<p>{tail}</p>", f"<p><b>{stop.split(',')[0]},</b>{stop.split(',', 1)[1]}</p>"]
+    return "\n".join(text), "".join(html)
 
 
 def main():
@@ -193,12 +231,11 @@ def main():
     if failures:
         print("Failures:\n" + "\n".join(failures))
     if alerts:
-        body = f"Flight price alert, STL to STT, {today}\n\n" + "\n".join(alerts) + \
-               "\n\nUse the attached workbook for full history. Verify on the airline site before booking."
+        body, html = build_message(today, new_rows, cfg)
         if a.no_email:
             print(body)
         else:
-            send_email(f"Flight price drop detected ({today})", body, WORKBOOK)
+            send_email(f"Flight price drop detected ({today})", body, WORKBOOK, html)
             print("Alert email sent.")
     if failures and len(failures) == len(cfg["date_windows"]) * len(cfg["airlines"]) * len(cfg["cabins"]) and not a.no_email and not a.mock:
         send_email("Flight tracker: all lookups failed", "\n".join(failures), None)
