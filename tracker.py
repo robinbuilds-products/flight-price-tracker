@@ -7,6 +7,7 @@ from pathlib import Path
 import requests
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.chart import LineChart, Reference
 from openpyxl.utils import get_column_letter
 
 ROOT = Path(__file__).parent
@@ -80,6 +81,34 @@ def previous_price(rows, new):
     return float(max(prior, key=lambda r: r["date"])["price_total"]) if prior else None
 
 
+def series_for(rows, r):
+    """All logged prices (oldest first) for the same window, airline and cabin as row r, up to and including r's date."""
+    same = [x for x in rows if x["window"] == r["window"] and x["airline"] == r["airline"]
+            and x["cabin"] == r["cabin"] and x["date"] <= r["date"]]
+    return [float(x["price_total"]) for x in sorted(same, key=lambda x: x["date"])]
+
+
+def trend_stats(rows, r):
+    """Returns (lowest_so_far, amount_above_lowest, avg_7day or None, pct_vs_avg or None)."""
+    prices = series_for(rows, r)
+    p = prices[-1]
+    lowest = min(prices)
+    avg = sum(prices[-7:]) / 7 if len(prices) >= 7 else None
+    return lowest, p - lowest, avg, (p / avg - 1) if avg else None
+
+
+def trend_phrase(rows, r):
+    lowest, above, avg, pct = trend_stats(rows, r)
+    text = "at its lowest price so far" if above < 0.5 else f"${above:,.0f} above its lowest price so far"
+    if avg is not None:
+        n = round(abs(pct) * 100)
+        if n == 0:
+            text += " and about the same as its 7-day average"
+        else:
+            text += f" and {n}% {'above' if pct > 0 else 'below'} its 7-day average"
+    return text
+
+
 def build_workbook(rows, cfg):
     wb = Workbook()
     hdr_fill = PatternFill("solid", fgColor="374151")
@@ -114,20 +143,51 @@ def build_workbook(rows, cfg):
     for i, w in enumerate([14, 17, 12, 17, 18, 16, 13, 13, 12, 12, 22], 1):
         ws.column_dimensions[get_column_letter(i)].width = w
     s = wb.create_sheet("Summary")
-    s.append(["Date window", "Airline", "Cabin", "Latest check", "Latest price", "Lowest price", "Highest price",
-              "Latest vs lowest", "Checks logged"])
-    style_header(s, 9)
+    s.append(["Date window", "Airline", "Cabin", "Latest check", "Latest price", "Lowest price so far",
+              "Highest price", "Latest vs lowest (%)", "Amount above lowest ($)", "7-day average price",
+              "Latest vs 7-day average (%)", "Checks logged"])
+    style_header(s, 12)
     combos = sorted({(r["window"], r["airline"], r["cabin"]) for r in rows})
     for w_, a, c in combos:
         sel = sorted([r for r in rows if (r["window"], r["airline"], r["cabin"]) == (w_, a, c)], key=lambda r: r["date"])
         prices = [float(r["price_total"]) for r in sel]
-        s.append([w_, a, c, sel[-1]["date"], prices[-1], min(prices), max(prices), prices[-1] / min(prices) - 1, len(sel)])
+        lowest, above, avg, pct = trend_stats(rows, sel[-1])
+        s.append([w_, a, c, sel[-1]["date"], prices[-1], lowest, max(prices), prices[-1] / lowest - 1, above,
+                  avg if avg is not None else "Needs 7 days", pct if pct is not None else "Needs 7 days", len(sel)])
     for row in s.iter_rows(min_row=2):
-        for i in (4, 5, 6):
+        for i in (4, 5, 6, 8, 9):
             row[i].number_format = "$#,##0"
         row[7].number_format = "0.0%"
-    for i, w in enumerate([17, 12, 17, 14, 14, 14, 14, 16, 12], 1):
+        row[10].number_format = "0.0%"
+        row[8].number_format = "$#,##0"
+        row[9].number_format = "$#,##0"
+    for i, w in enumerate([17, 12, 17, 14, 14, 16, 14, 16, 18, 16, 20, 12], 1):
         s.column_dimensions[get_column_letter(i)].width = w
+    s.row_dimensions[1].height = 45
+    t = wb.create_sheet("Price Trend")
+    dates = sorted({r["date"] for r in rows})
+    names = [f"{c[1]} {c[2]}, {c[0].split(',')[0]}" for c in combos]
+    t.append(["Date"] + names)
+    style_header(t, len(names) + 1)
+    lookup = {(r["date"], r["window"], r["airline"], r["cabin"]): float(r["price_total"]) for r in rows}
+    for d in dates:
+        t.append([d] + [lookup.get((d,) + c) for c in combos])
+    for row in t.iter_rows(min_row=2):
+        for cell in row[1:]:
+            cell.number_format = "$#,##0"
+    t.column_dimensions["A"].width = 14
+    for i in range(2, len(names) + 2):
+        t.column_dimensions[get_column_letter(i)].width = 24
+    t.row_dimensions[1].height = 45
+    ch = LineChart()
+    ch.title = "Daily price by fare"
+    ch.y_axis.title = "Total price, 2 travelers ($)"
+    ch.x_axis.title = "Date checked"
+    ch.y_axis.number_format = "$#,##0"
+    ch.add_data(Reference(t, min_col=2, max_col=len(names) + 1, min_row=1, max_row=len(dates) + 1), titles_from_data=True)
+    ch.set_categories(Reference(t, min_col=1, min_row=2, max_row=len(dates) + 1))
+    ch.height, ch.width = 9, 22
+    t.add_chart(ch, f"A{len(dates) + 4}")
     wb.save(WORKBOOK)
 
 
@@ -148,7 +208,7 @@ def send_email(subject, body, attach, html=None):
         s.send_message(msg)
 
 
-def build_message(today, new_rows, cfg):
+def build_message(today, new_rows, cfg, all_rows):
     """Friendly automated alert email: returns (plain_text, html)."""
     date_text = f"{today.strftime('%B')} {today.day}, {today.year}"
     text_lines, html_lines = [], []
@@ -162,6 +222,12 @@ def build_message(today, new_rows, cfg):
         links = [f'<a href="{escape(r["link"], quote=True)}">{n}</a>' if r.get("link") else n
                  for r, n in zip(items, names)]
         html_lines.append(f"{label}: " + ", ".join(links))
+    first_day = not any(r["date"] < today.isoformat() for r in all_rows)
+    trend_items = []
+    for win in cfg["date_windows"]:
+        for r in sorted([r for r in new_rows if r["window"] == win["label"]], key=lambda r: (r["airline"], r["cabin"])):
+            trend_items.append(f"{r['airline']} {r['cabin']}, {win['label'].split(',')[0]}: {trend_phrase(all_rows, r)}")
+    first_msg = "Tracking started today. Trends will appear in the next email."
     parts = []
     if cfg.get("target_price_total"):
         parts.append(f"a fare is ${cfg['target_price_total']:,.0f} or less for {cfg['adults']} travelers")
@@ -179,12 +245,16 @@ def build_message(today, new_rows, cfg):
     check_a = "Head to the airline's website now, because fares can change several times throughout the day."
     stop_q = "To stop these emails,"
     stop_a = " reply to this email and Robin will turn them off."
-    text = [head, "", intro, ""] + [f"- {l}" for l in text_lines] + ["", "Your alert level: " + level, ""]
+    text = [head, "", intro, ""] + [f"- {l}" for l in text_lines] + [""]
+    text += ["Price trend: " + first_msg] if first_day else ["Price trend:"] + [f"- {t}" for t in trend_items]
+    text += ["", "Your alert level: " + level, ""]
     if why:
         text += ["Why only Business? " + why, ""]
     text += [workbook, "", f"{check_q} {check_a}", "", stop_q + stop_a]
+    trend_html = (f"<p><b>Price trend:</b> {first_msg}</p>" if first_day else
+                  "<p><b>Price trend:</b></p><ul>" + "".join(f"<li>{t}</li>" for t in trend_items) + "</ul>")
     html = [f"<p><b>{head}</b></p>", f"<p>{intro}</p>", "<ul>" + "".join(f"<li>{l}</li>" for l in html_lines) + "</ul>",
-            f"<p><b>Your alert level:</b> {level}</p>"]
+            trend_html, f"<p><b>Your alert level:</b> {level}</p>"]
     if why:
         html.append(f"<p><b>Why only Business?</b> {why}</p>")
     html += [f"<p>{workbook}</p>", f"<p><b>{check_q}</b> {check_a}</p>", f"<p><b>{stop_q}</b>{stop_a}</p>"]
@@ -239,7 +309,7 @@ def main():
     if failures:
         print("Failures:\n" + "\n".join(failures))
     if alerts:
-        body, html = build_message(today, new_rows, cfg)
+        body, html = build_message(today, new_rows, cfg, rows)
         if a.no_email:
             print(body)
         else:
