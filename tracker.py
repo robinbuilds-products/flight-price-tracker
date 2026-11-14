@@ -98,15 +98,14 @@ def trend_stats(rows, r):
 
 
 def trend_phrase(rows, r):
-    lowest, above, avg, pct = trend_stats(rows, r)
-    text = "at its lowest price so far" if above < 0.5 else f"${above:,.0f} above its lowest price so far"
-    if avg is not None:
-        n = round(abs(pct) * 100)
-        if n == 0:
-            text += " and about the same as its 7-day average"
-        else:
-            text += f" and {n}% {'above' if pct > 0 else 'below'} its 7-day average"
-    return text
+    """Up or down versus the 7-day average, or None until 7 days of data exist for this fare."""
+    _, _, avg, pct = trend_stats(rows, r)
+    if avg is None:
+        return None
+    n = round(abs(pct) * 100)
+    if n == 0:
+        return "about the same as its 7-day average"
+    return f"{n}% {'above' if pct > 0 else 'below'} its 7-day average"
 
 
 def build_workbook(rows, cfg):
@@ -222,12 +221,15 @@ def build_message(today, new_rows, cfg, all_rows):
         links = [f'<a href="{escape(r["link"], quote=True)}">{n}</a>' if r.get("link") else n
                  for r, n in zip(items, names)]
         html_lines.append(f"{label}: " + ", ".join(links))
-    first_day = not any(r["date"] < today.isoformat() for r in all_rows)
     trend_items = []
     for win in cfg["date_windows"]:
         for r in sorted([r for r in new_rows if r["window"] == win["label"]], key=lambda r: (r["airline"], r["cabin"])):
-            trend_items.append(f"{r['airline']} {r['cabin']}, {win['label'].split(',')[0]}: {trend_phrase(all_rows, r)}")
-    first_msg = "Tracking started today. Trends will appear in the next email."
+            phrase = trend_phrase(all_rows, r)
+            if phrase:
+                trend_items.append(f"{r['airline']} {r['cabin']}, {win['label'].split(',')[0]}: {phrase}")
+    trend_wait = ("The attached file shows each day's price change, in dollars and percent. After 7 days of tracking, "
+                  "we'll share the overall trend (up or down) here.")
+    trend_intro = "Compared with each fare's average over the last 7 days:"
     parts = []
     if cfg.get("target_price_total"):
         parts.append(f"a fare is ${cfg['target_price_total']:,.0f} or less for {cfg['adults']} travelers")
@@ -245,16 +247,20 @@ def build_message(today, new_rows, cfg, all_rows):
     check_a = "Head to the airline's website now, because fares can change several times throughout the day."
     stop_q = "To stop these emails,"
     stop_a = " reply to this email and Robin will turn them off."
-    text = [head, "", intro, ""] + [f"- {l}" for l in text_lines] + [""]
-    text += ["Price trend: " + first_msg] if first_day else ["Price trend:"] + [f"- {t}" for t in trend_items]
-    text += ["", "Your alert level: " + level, ""]
+    text = [head, "", intro, ""] + [f"- {l}" for l in text_lines] + ["", "Your alert level: " + level, ""]
+    if trend_items:
+        text += ["Pricing trend: " + trend_intro] + [f"- {t}" for t in trend_items] + [""]
+    else:
+        text += ["Pricing trend: " + trend_wait, ""]
     if why:
         text += ["Why only Business? " + why, ""]
     text += [workbook, "", f"{check_q} {check_a}", "", stop_q + stop_a]
-    trend_html = (f"<p><b>Price trend:</b> {first_msg}</p>" if first_day else
-                  "<p><b>Price trend:</b></p><ul>" + "".join(f"<li>{t}</li>" for t in trend_items) + "</ul>")
     html = [f"<p><b>{head}</b></p>", f"<p>{intro}</p>", "<ul>" + "".join(f"<li>{l}</li>" for l in html_lines) + "</ul>",
-            trend_html, f"<p><b>Your alert level:</b> {level}</p>"]
+            f"<p><b>Your alert level:</b> {level}</p>"]
+    if trend_items:
+        html.append(f"<p><b>Pricing trend:</b> {trend_intro}</p><ul>" + "".join(f"<li>{t}</li>" for t in trend_items) + "</ul>")
+    else:
+        html.append(f"<p><b>Pricing trend:</b> {trend_wait}</p>")
     if why:
         html.append(f"<p><b>Why only Business?</b> {why}</p>")
     html += [f"<p>{workbook}</p>", f"<p><b>{check_q}</b> {check_a}</p>", f"<p><b>{stop_q}</b>{stop_a}</p>"]
