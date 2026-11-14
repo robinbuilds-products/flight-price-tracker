@@ -1,7 +1,7 @@
 name: Daily flight price check
 on:
   schedule:
-    - cron: "0 13 * * *"   # 7:00 AM Central (standard time), once a day
+    - cron: "0 13 * * *"
   workflow_dispatch: {}
 permissions:
   contents: write
@@ -17,6 +17,7 @@ jobs:
       - name: Run price check
         env:
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          SMTP_HOST: smtp.zoho.com
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
