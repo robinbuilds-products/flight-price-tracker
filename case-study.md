@@ -1,68 +1,96 @@
 # Case Study: Automating Flight Price Tracking Around the Holiday Price Drop
 
+Built with Microsoft Copilot in a single day: about two hours for the initial build, plus about an hour and a half of testing and refining the email message.
+
 ## The problem
-A traveler booking premium-cabin flights for two people from St. Louis to St. Thomas wanted to buy at the best moment instead of paying a travel agent. Airlines often adjust fares around the holidays, but the timing is unpredictable and checking prices by hand every day is tedious and easy to forget. The flight price also decided when hotel prices would be finalized, so a missed drop delayed the whole trip plan.
+A client booking premium-cabin flights for two wanted to buy at the best moment, without a travel agent and without checking prices by hand every day. She also wanted to see how much, and in which direction, prices were changing, in dollars and percent. The flight price also decided when hotel prices could be finalized, so a missed drop delayed the whole trip plan.
+
+## How it started
+The client first tried to build a tracker herself with Copilot in her personal Microsoft 365 account, as a way to learn to build with AI. She wasn't getting the results she wanted, so she asked me to build an AI flight tracker using Google Flights data.
 
 ## Requirements
-- Two adults, round trip, two possible date windows in April 2027
-- United and American, in Premium Economy or Business
-- No overnight layovers
-- Avoid specific booking sites the traveler distrusts
-- A daily record of prices so the moment of a drop is visible
-- Automatic email alerts, tested on the builder first and then switched to the traveler
-- Bookings are made by the traveler directly, never by the tool
+- Two adults, round trip, St. Louis to St. Thomas, two April 2027 date windows
+- United and American, in Premium Economy or Business, with no overnight layovers
+- Avoid booking sites the client distrusts
+- A daily record of prices, so the day of a drop is visible
+- Automatic email alerts, tested on me first and then switched to the client
+- The tool never books anything; the client books directly
 
-## Research: how existing AI flight trackers work
-Before building, we looked at the flight trackers already offered by AI platforms and travel sites, and at where their data comes from.
+## Research: what AI platforms already offer
+Before building, I looked at the flight trackers already offered by AI platforms and travel sites, and at where their data comes from.
 
-**What exists (as of November 2026)**
-- **Google AI Mode** added flight price tracking on August 27, 2026. You ask it to track prices in a chat and it emails you if prices change for your dates. Google says results draw on more than 300 partner airlines and travel sites.
+- **Google AI Mode** added flight price tracking on August 27, 2026. You ask it to track prices in a chat, and it emails you if prices change for your dates. Google says results draw on more than 300 partner airlines and travel sites.
 - **Google Flight Deals** (beta) turns a plain-English trip description into fares and badges those at least 20% below the typical price.
-- **Travel sites with built-in AI**, such as KAYAK's Ask AI, Expedia and Skyscanner, which also run apps inside ChatGPT, show live prices from their own systems.
-- **Plug-in data services** connect live Google Flights-style fares to assistants such as Claude or ChatGPT, with a daily scheduled scan that alerts only when a fare is rated low.
-- **General chatbots on their own** (ChatGPT, Claude, Gemini) are good for planning and research, but one review found them unreliable for live prices unless connected to a data source.
+- **Travel sites with built-in AI**, such as KAYAK, Expedia and Skyscanner, show live prices from their own systems.
+- **Plug-in data services** connect live Google Flights-style fares to assistants such as Claude or ChatGPT.
+- **General chatbots on their own** are good for planning, but one review found them unreliable for live prices unless connected to a data source.
 
-**Where the data comes from**
-- The AI tools generally do not buy airline content directly. The AI is a layer on top of existing travel-data pipelines: a search engine's own flight data (Google's partner network), the booking sites' own inventory, or a data service.
-- We found no public evidence of an AI company paying airlines directly for fare content, so we treat that as unconfirmed.
-- Airlines supply fares to distributors and aggregators through the industry's usual booking systems and agreements.
+The AI tools generally don't buy airline content directly. They sit on top of existing travel-data pipelines. I found no public evidence of an AI company paying airlines directly for fare content, so I treat that as unconfirmed.
 
-**What the built-in tools do not cover**
-- They do not keep a price history you can analyze, which is what shows *when* a drop happened.
-- You cannot set your own rules, such as a percentage-drop threshold, a target price, or a two-window comparison across both airlines and both cabins.
-- Seat maps are not part of fare data. They sit inside the airline's own booking flow, so no fare tracker can confirm that three seats are together in a row. That check has to be made on the airline's site at the moment of purchase.
+**What the built-in tools don't cover:** a price history you can analyze, your own alert rules, and a comparison across both airlines, both cabins and both date windows. Fare data also doesn't include seat maps. That gap is why a custom tracker was still worth building.
 
-This is why a custom tracker was still worth building: the platform tools alert on a price change, while this build records every day's price and flags the day the drop happens.
+## The first challenge
+The first challenge was finding a reliable way to get flight information that includes prices. Before building anything, I explored the options with Copilot and chose a solution first. We decided to build in GitHub rather than inside Copilot itself. That keeps the code in the Microsoft ecosystem and makes it easy to share with anyone who wants the same kind of tracker.
 
 ## Approach
-1. **Define the rules first.** Search settings live in one config file, so changing dates or airlines needs no code changes.
-2. **Use a data service instead of scraping.** Google Flights data comes through the SerpApi service. This avoids the excluded sites, and scraping airline pages is fragile and often against their terms.
-3. **One search per option.** 2 date windows x 2 airlines x 2 cabins = 8 searches per day, about 240 a month, which fits a free plan.
-4. **Filter, then pick the lowest.** Each result is checked for overnight layovers and the correct airline before the cheapest qualifying fare is logged.
-5. **Keep history in plain files.** A CSV is the source of truth, and an Excel workbook is rebuilt from it each day with change amounts, percentages and DROP flags.
-6. **Run on a schedule for free.** GitHub Actions runs the check daily, commits the new data and sends an email through a Gmail app password. Keys are stored as encrypted secrets, never in the code.
-7. **Test before trusting.** A mock mode generates fake prices with a simulated drop, so the alert logic was tested without spending searches or sending email.
+1. **Rules first.** Search settings live in one config file, so changing dates, airlines, cabins or the alert level needs no code changes.
+2. **A data service instead of scraping.** Google Flights data comes through SerpApi. That avoids the sites the client dislikes, and scraping airline pages is fragile.
+3. **One search per option.** 2 date windows x 2 airlines x 2 cabins is 8 searches a day, about 240 a month.
+4. **Filter, then pick the lowest.** Each result is checked for the right airline and no overnight layovers before the cheapest qualifying fare is logged.
+5. **Plain-file history.** A CSV is the source of truth, and an Excel workbook is rebuilt from it each day with changes, drop flags, trend columns and a price chart.
+6. **A free daily schedule.** GitHub Actions runs the check at 7:00 AM Central, saves the data and sends the email through Gmail. Keys are stored as encrypted secrets, never in the code.
+7. **Two alert rules.** An email goes out when a fare is at or below a target price, or drops by a set percentage from the day before.
 
-## Safeguards and quality control
-- Alerts name the option, old price, new price and percentage change, and remind the reader to verify on the airline's site.
+## Designing the email
+The email is written for an executive who values clear, literal wording. After several rounds of edits, the final message:
+- States up front that it is automated.
+- Lists the fares by date window, and makes each fare a link that opens that fare's search on Google Flights.
+- Reminds her of her alert level and why she is receiving the email.
+- Shows a pricing trend. For the first 7 days it explains that daily changes are in the attached file. From day 7, it reports whether each fare is above or below its 7-day average.
+- Explains why Premium Economy isn't shown, when no fares are available.
+- Ends with "Does the price look right?", a prompt to check the airline's website, and how to stop the emails.
+
+After review, I cut a disclaimer and a repeated mention of the attachment. I also wrote the subject line to say exactly what the email is: "Automated flight price alert: STL to STT, April 2027".
+
+## Testing the live build
+I checked the first live run against Google Flights in a browser. That caught problems a fake-price test could not.
+- **Wrong cabin codes.** The first run logged almost identical prices for Premium Economy and Business. Opening the saved link showed the search was set to First. The data service numbers cabins 1 = Economy, 2 = Premium Economy, 3 = Business, 4 = First, and my config was off by one. After the fix, the browser showed Business with the same price the tracker logged.
+- **No Premium Economy fares.** After the fix, Premium Economy rows disappeared. Google Flights showed no results for that cabin on these dates, so the tracker was right to log nothing.
+- **Price basis confirmed.** Google's page states that prices include taxes and fees for 2 adults, so the logged total covers both travelers.
+- **Email sender.** My first attempt to send from a custom-domain Zoho mailbox kept failing at the sign-in step, even after I tried two servers and two connection methods. I switched to Gmail, which works, and deleted the unused Zoho app password.
+- **Email alert confirmed.** With a target price above the current fares, the next run sent the alert, which confirmed the full chain from price pull to inbox.
+
+## Pricing trends and the road to AI prediction
+The tracker records every day's price. The workbook shows daily changes in dollars and percent, the lowest price so far and a 7-day average. This describes what has already happened. It does not forecast what will happen.
+
+AI price prediction needs months of daily data, including the holiday period, to be reliable. If the client wants to use the tracker again next year for the same trip, I can add prediction after about six months of data. The database has to fill up first.
+
+## Safeguards
 - The tracker never books anything; a person makes the purchase.
 - Reruns on the same day replace that day's rows instead of duplicating them.
 - If every lookup fails, a failure email is sent so silent breakage is noticed.
-- A short written guide lets a non-technical person run the same search by hand with Copilot as a backup.
+- Keys are stored as encrypted secrets and are never in the code.
 
-## Known limits
-- Seat availability cannot be confirmed from price data (see the research above).
-- Data-service prices can differ slightly from the airline's own site.
-- Not yet confirmed: the data service's free-plan limit, and whether its price is the total for both travelers or per person.
+## Limits
+- Fare data does not include seat maps or seat counts.
+- Prices from the data service can differ slightly from the airline's own site.
+- A target-price alert repeats daily while fares stay at or below the target.
+- Trends start after 7 days of data.
+- I have not confirmed that the free data-plan limit covers about 240 searches a month.
 
-## Results
-Live results will be added here after the tracker has collected at least several weeks of data, including the day the drop was detected, the size of the drop, and how the purchase price compared with the earliest price tracked.
+## Outcome so far
+The tracker is delivered, tested and running once a day. Alerts currently go to me, as planned for the test phase. The open question is whether the client will want to use it. Results, including the day a drop is detected, its size and how the purchase price compares with the earliest price tracked, will be added here once the tracker has collected real data and the client has decided.
+
+## Cost and time
+- Time: about two hours for the initial build, plus about an hour and a half of testing and refining the email message, in one day.
+- Cost: about one day's worth of Copilot Cowork usage.
 
 ## Lessons
-- Check what the platforms already offer before building. Their tools cover alerts; the gap is price history and custom rules.
-- Writing the rules down before coding made the tool simple to change.
-- A mock mode is the fastest way to test alert logic safely.
-- Keeping secrets out of code and using a private repository protects client information.
+- Check what the platforms already offer before building. Their tools cover alerts. The gap is price history and custom rules.
+- Test against the real source early. A fake-data test can't catch a wrong setting, but a ten-minute comparison with the live website did.
+- Keep the rules in one config file, so fixes are one-line changes.
+- Write for the reader. An executive needs plain labels, a clear reason for the email and an easy way to stop it.
+- Be honest about what the data can and can't do. Trends describe the past, and prediction needs more data.
 
 ## Sources
 - Google, "3 new ways to plan and book travel in Search" (blog.google, August 27, 2026)
