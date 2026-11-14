@@ -2,7 +2,7 @@
 
 An automated daily flight price tracker that watches fares, keeps a price history, shows pricing trends, and emails an alert when a fare hits a target or drops. Built as a forward-deployed product project: from a client's real need, through research and design, to a working, tested system.
 
-**Built with Microsoft Copilot in a single day: about two hours for the initial build, plus about an hour and a half of testing and refining the email message.**
+Built with Microsoft Copilot in a single day: about two hours for the initial build, plus about an hour and a half of testing and refining the email message.
 
 ## The problem
 A traveler booking premium-cabin flights for two wanted to buy at the best moment, without a travel agent. Fares move every day, checking by hand is easy to forget, and the flight price decided when hotel prices could be finalized.
