@@ -139,7 +139,8 @@ def send_email(subject, body, attach):
     if attach and attach.exists():
         msg.add_attachment(attach.read_bytes(), maintype="application",
                            subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=attach.name)
-    with smtplib.SMTP_SSL(host, 465, context=ssl.create_default_context()) as s:
+    with smtplib.SMTP(host, 587, timeout=30) as s:
+        s.starttls(context=ssl.create_default_context())
         s.login(user, pwd)
         s.send_message(msg)
 
