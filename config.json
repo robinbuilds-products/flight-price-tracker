@@ -1,0 +1,16 @@
+{
+  "origin": "STL",
+  "destination": "STT",
+  "adults": 2,
+  "currency": "USD",
+  "airlines": {"United": "UA", "American": "AA"},
+  "cabins": {"Premium Economy": 3, "Business": 4},
+  "date_windows": [
+    {"label": "Apr 13-20, 2027", "outbound": "2027-04-13", "return": "2027-04-20"},
+    {"label": "Apr 18-25, 2027", "outbound": "2027-04-18", "return": "2027-04-25"}
+  ],
+  "drop_threshold_pct": 5,
+  "target_price_total": null,
+  "price_is_total_for_all_travelers": true,
+  "excluded_sites_note": "Kayak and Hopper are never used. Prices come only from Google Flights data via SerpApi."
+}

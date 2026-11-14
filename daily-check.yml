@@ -1,0 +1,30 @@
+name: Daily flight price check
+on:
+  schedule:
+    - cron: "0 13 * * *"   # 7:00 AM Central (standard time), once a day
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Run price check
+        env:
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+        run: python tracker.py
+      - name: Save results back to the repo
+        run: |
+          git config user.name "flight-tracker-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet || git commit -m "Price data for $(date -u +%F)"
+          git push

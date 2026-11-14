@@ -1,0 +1,207 @@
+"""Flight price tracker: STL -> STT. Pulls prices daily, logs them, builds an Excel workbook, emails on drops."""
+import argparse, csv, json, os, smtplib, ssl, sys, random
+from datetime import date
+from email.message import EmailMessage
+from pathlib import Path
+import requests
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
+
+ROOT = Path(__file__).parent
+HISTORY = ROOT / "data" / "price_history.csv"
+WORKBOOK = ROOT / "data" / "Flight_Price_Tracker.xlsx"
+FIELDS = ["date", "window", "airline", "cabin", "price_total", "price_per_person", "booking_note", "link"]
+API = "https://serpapi.com/search.json"
+
+
+def load_config():
+    return json.loads((ROOT / "config.json").read_text())
+
+
+def acceptable(option, airline_code_name):
+    """No overnight layovers, no overnight flight legs, and every leg flown by the chosen airline."""
+    if any(l.get("overnight") for l in option.get("layovers", [])):
+        return False
+    for leg in option.get("flights", []):
+        if leg.get("overnight"):
+            return False
+        if airline_code_name.lower() not in (leg.get("airline") or "").lower():
+            return False
+    return True
+
+
+def fetch_live(cfg, win, airline, code, cabin, cabin_code, key):
+    params = {"engine": "google_flights", "departure_id": cfg["origin"], "arrival_id": cfg["destination"],
+              "outbound_date": win["outbound"], "return_date": win["return"], "type": 1,
+              "adults": cfg["adults"], "travel_class": cabin_code, "include_airlines": code,
+              "currency": cfg["currency"], "hl": "en", "api_key": key}
+    r = requests.get(API, params=params, timeout=60)
+    r.raise_for_status()
+    data = r.json()
+    options = (data.get("best_flights") or []) + (data.get("other_flights") or [])
+    good = [o for o in options if o.get("price") and acceptable(o, airline)]
+    if not good:
+        return None
+    best = min(good, key=lambda o: o["price"])
+    link = data.get("search_metadata", {}).get("google_flights_url", "")
+    return best["price"], link
+
+
+def fetch_mock(cfg, win, airline, code, cabin, cabin_code, key, today):
+    rnd = random.Random(f"{win['label']}{airline}{cabin}")
+    base = 2200 if cabin_code == 3 else 6800
+    price = base + rnd.randint(-150, 150) + (150 if airline == "American" else 0)
+    day = (today - date(2026, 11, 1)).days
+    if day >= 3:
+        price = int(price * 0.88)  # simulated holiday drop
+    return price, "mock-data"
+
+
+def read_history():
+    if not HISTORY.exists():
+        return []
+    with HISTORY.open() as f:
+        return list(csv.DictReader(f))
+
+
+def write_history(rows):
+    HISTORY.parent.mkdir(exist_ok=True)
+    with HISTORY.open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=FIELDS)
+        w.writeheader()
+        w.writerows(rows)
+
+
+def previous_price(rows, new):
+    prior = [r for r in rows if r["window"] == new["window"] and r["airline"] == new["airline"]
+             and r["cabin"] == new["cabin"] and r["date"] < new["date"]]
+    return float(max(prior, key=lambda r: r["date"])["price_total"]) if prior else None
+
+
+def build_workbook(rows, cfg):
+    wb = Workbook()
+    hdr_fill = PatternFill("solid", fgColor="374151")
+    def style_header(ws, ncol):
+        for c in range(1, ncol + 1):
+            cell = ws.cell(1, c)
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = hdr_fill
+            cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        ws.freeze_panes = "A2"
+    ws = wb.active
+    ws.title = "Price Log"
+    ws.append(["Date checked", "Date window", "Airline", "Cabin", "Total price (all travelers)", "Price per person",
+               "Prior price", "Change ($)", "Change (%)", "Drop alert", "Source note"])
+    style_header(ws, 11)
+    srt = sorted(rows, key=lambda r: (r["date"], r["window"], r["airline"], r["cabin"]))
+    thr = cfg["drop_threshold_pct"] / 100
+    for r in srt:
+        prior = previous_price(srt, r)
+        p = float(r["price_total"])
+        chg = p - prior if prior else None
+        pct = chg / prior if prior else None
+        ws.append([r["date"], r["window"], r["airline"], r["cabin"], p, float(r["price_per_person"]), prior, chg, pct,
+                   "DROP" if pct is not None and pct <= -thr else "", r["booking_note"]])
+    for row in ws.iter_rows(min_row=2):
+        for i in (4, 5, 6, 7):
+            row[i].number_format = "$#,##0;($#,##0);-"
+        row[8].number_format = "0.0%"
+        if row[9].value == "DROP":
+            row[9].fill = PatternFill("solid", fgColor="C6F6D5")
+            row[9].font = Font(bold=True, color="14532D")
+    for i, w in enumerate([14, 17, 12, 17, 18, 16, 13, 13, 12, 12, 22], 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    s = wb.create_sheet("Summary")
+    s.append(["Date window", "Airline", "Cabin", "Latest check", "Latest price", "Lowest price", "Highest price",
+              "Latest vs lowest", "Checks logged"])
+    style_header(s, 9)
+    combos = sorted({(r["window"], r["airline"], r["cabin"]) for r in rows})
+    for w_, a, c in combos:
+        sel = sorted([r for r in rows if (r["window"], r["airline"], r["cabin"]) == (w_, a, c)], key=lambda r: r["date"])
+        prices = [float(r["price_total"]) for r in sel]
+        s.append([w_, a, c, sel[-1]["date"], prices[-1], min(prices), max(prices), prices[-1] / min(prices) - 1, len(sel)])
+    for row in s.iter_rows(min_row=2):
+        for i in (4, 5, 6):
+            row[i].number_format = "$#,##0"
+        row[7].number_format = "0.0%"
+    for i, w in enumerate([17, 12, 17, 14, 14, 14, 14, 16, 12], 1):
+        s.column_dimensions[get_column_letter(i)].width = w
+    wb.save(WORKBOOK)
+
+
+def send_email(subject, body, attach):
+    host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    user, pwd, to = os.environ["SMTP_USER"], os.environ["SMTP_PASSWORD"], os.environ["ALERT_EMAIL"]
+    msg = EmailMessage()
+    msg["Subject"], msg["From"], msg["To"] = subject, user, to
+    msg.set_content(body)
+    if attach and attach.exists():
+        msg.add_attachment(attach.read_bytes(), maintype="application",
+                           subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=attach.name)
+    with smtplib.SMTP_SSL(host, 465, context=ssl.create_default_context()) as s:
+        s.login(user, pwd)
+        s.send_message(msg)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--mock", action="store_true", help="use fake prices (no API key needed)")
+    ap.add_argument("--no-email", action="store_true", help="print alerts instead of emailing")
+    ap.add_argument("--date", help="override today's date (YYYY-MM-DD), for testing")
+    a = ap.parse_args()
+    cfg = load_config()
+    today = date.fromisoformat(a.date) if a.date else date.today()
+    key = os.environ.get("SERPAPI_KEY")
+    if not a.mock and not key:
+        sys.exit("Set SERPAPI_KEY (or use --mock).")
+    rows = [r for r in read_history() if r["date"] != today.isoformat()]  # rerun-safe
+    new_rows, failures = [], []
+    for win in cfg["date_windows"]:
+        for airline, code in cfg["airlines"].items():
+            for cabin, ccode in cfg["cabins"].items():
+                try:
+                    res = fetch_mock(cfg, win, airline, code, cabin, ccode, key, today) if a.mock \
+                        else fetch_live(cfg, win, airline, code, cabin, ccode, key)
+                except Exception as e:
+                    failures.append(f"{win['label']} {airline} {cabin}: {e}")
+                    continue
+                if res is None:
+                    print(f"No qualifying fare: {win['label']} {airline} {cabin}")
+                    continue
+                total, link = res
+                if not cfg["price_is_total_for_all_travelers"]:
+                    total *= cfg["adults"]
+                new_rows.append({"date": today.isoformat(), "window": win["label"], "airline": airline, "cabin": cabin,
+                                 "price_total": round(total, 2), "price_per_person": round(total / cfg["adults"], 2),
+                                 "booking_note": "Google Flights data (SerpApi)" if not a.mock else "mock",
+                                 "link": link})
+    alerts = []
+    for n in new_rows:
+        prior = previous_price(rows, n)
+        p = n["price_total"]
+        if prior and (p - prior) / prior <= -cfg["drop_threshold_pct"] / 100:
+            alerts.append(f"DROP  {n['window']} | {n['airline']} {n['cabin']}: ${prior:,.0f} -> ${p:,.0f} ({(p-prior)/prior:.1%})")
+        elif cfg.get("target_price_total") and p <= cfg["target_price_total"]:
+            alerts.append(f"TARGET {n['window']} | {n['airline']} {n['cabin']}: ${p:,.0f}")
+    rows += new_rows
+    write_history(rows)
+    if rows:
+        build_workbook(rows, cfg)
+    print(f"Logged {len(new_rows)} prices for {today}.")
+    if failures:
+        print("Failures:\n" + "\n".join(failures))
+    if alerts:
+        body = f"Flight price alert, STL to STT, {today}\n\n" + "\n".join(alerts) + \
+               "\n\nUse the attached workbook for full history. Verify on the airline site before booking."
+        if a.no_email:
+            print(body)
+        else:
+            send_email(f"Flight price drop detected ({today})", body, WORKBOOK)
+            print("Alert email sent.")
+    if failures and len(failures) == len(cfg["date_windows"]) * len(cfg["airlines"]) * len(cfg["cabins"]) and not a.no_email and not a.mock:
+        send_email("Flight tracker: all lookups failed", "\n".join(failures), None)
+
+
+if __name__ == "__main__":
+    main()
