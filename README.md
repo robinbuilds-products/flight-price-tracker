@@ -1,11 +1,26 @@
 # Flight Price Tracker
 
-An automated daily flight price tracker that watches fares, keeps a price history, shows pricing trends, and emails an alert when a fare hits a target or drops. Built as a forward-deployed product project: from a client's real need, through research and design, to a working, tested system.
+An automated daily flight price tracker that watches fares, keeps a price history, shows pricing trends, and emails an alert when a fare hits a target or drops. I built it as a forward-deployed product project, from a client's real need through research, design and testing to a working system.
 
 Built with Microsoft Copilot in a single day: about two hours for the initial build, plus about an hour and a half of testing and refining the email message.
 
+Cost: about one day's worth of Copilot Cowork usage.
+
 ## The problem
-A traveler booking premium-cabin flights for two wanted to buy at the best moment, without a travel agent. Fares move every day, checking by hand is easy to forget, and the flight price decided when hotel prices could be finalized.
+A client booking premium-cabin flights for two wanted to buy at the best moment, without a travel agent and without checking prices by hand every day. She also wanted to see how much, and in which direction, prices were changing, in dollars and percent.
+
+## How it started
+The client first tried to build a tracker herself with Copilot in her personal Microsoft 365 account, as a way to learn to build with AI. She wasn't getting the results she wanted, so she asked me to build an AI flight tracker using Google Flights data.
+
+## The first challenge
+The first challenge was finding a reliable way to get flight information that includes prices. Before building anything, I explored the options with Copilot and chose a solution first. We decided to build in GitHub rather than inside Copilot itself. That keeps the code in the Microsoft ecosystem and makes it easy to share with anyone who wants the same kind of tracker.
+
+## The email message
+After talking with the client, I wrote a tailored email that:
+- Reminds her why she is receiving it.
+- Lets her click straight to a flight she may want to book, because seats can fill up fast.
+- Attaches the Excel file with the full price history.
+- Shows at a glance whether prices went up or down, and by how much. This starts after 7 days of data.
 
 ## What it does
 - Checks fares once a day (7:00 AM Central) for a round trip from St. Louis (STL) to St. Thomas (STT), 2 travelers, two April 2027 date windows
@@ -14,7 +29,6 @@ A traveler booking premium-cabin flights for two wanted to buy at the best momen
 - Emails an alert when a fare is at or below a target price, or drops by a set percentage from the day before
 - Makes each fare in the email a link that opens that fare's search on Google Flights
 - Shares a pricing trend (up or down versus the 7-day average) once 7 days of data are in
-- Sends a plain-language message written for an executive reader: what was found, the alert level, the pricing trend, and how to stop the emails
 
 ## How it works
 1. GitHub Actions starts the check on a daily schedule.
@@ -39,7 +53,9 @@ To try the logic without keys: `python tracker.py --mock --no-email` uses fake p
 The tracker runs once a day. Airlines change fares throughout the day with no published schedule, so there is no exact moment to sync to. Checking more often multiplies the searches used and would likely require a paid SerpApi plan.
 
 ## Pricing trends and the road to prediction
-The tracker records every day's price, and the workbook shows daily changes in dollars and percent, the lowest price so far, and a 7-day average. From day 7, the email reports whether each fare is above or below its 7-day average. This describes what has happened; it does not forecast what will happen. It is the data foundation for a future drop-prediction model, which would need months of daily prices, including the holiday period, to be reliable.
+The tracker records every day's price. The workbook shows daily changes in dollars and percent, the lowest price so far, and a 7-day average. From day 7, the email reports whether each fare is above or below its 7-day average.
+
+This describes what has already happened. It does not forecast what will happen. If the client wants to use the tracker again next year for the same trip, AI price prediction can be added after about six months of data. The database has to fill up first, so it can't be done yet.
 
 ## What testing found
 Testing against the live source caught issues a fake-data test could not:
@@ -56,7 +72,7 @@ Testing against the live source caught issues a fake-data test could not:
 - The free data-plan limit has not been confirmed against about 240 searches a month.
 
 ## My role
-Product manager and builder: defined the requirements with the client, researched what AI platforms and travel sites already offer, chose the data source and architecture, wrote the alert message for an executive reader, and tested the system end to end.
+Product manager and builder. I defined the requirements with the client, researched what AI platforms and travel sites already offer, chose the data source and architecture, wrote the alert message for an executive reader, and tested the system end to end.
 
 ## Tech
 Python, GitHub Actions, SerpApi (Google Flights data), openpyxl, Gmail SMTP.
