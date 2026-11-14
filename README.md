@@ -56,4 +56,4 @@ Product manager and builder: defined the requirements with the client, researche
 Python, GitHub Actions, SerpApi (Google Flights data), openpyxl, Gmail SMTP.
 
 ## Case study
-See [docs/case-study.md](docs/case-study.md) for the research, design decisions and lessons learned.
+See [case-study.md](case-study.md) for the research, design decisions and lessons learned.
