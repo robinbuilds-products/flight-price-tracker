@@ -235,7 +235,7 @@ def main():
         if a.no_email:
             print(body)
         else:
-            send_email(f"Flight price drop detected ({today})", body, WORKBOOK, html)
+            send_email("Automated flight price alert: STL to STT, April 2027", body, WORKBOOK, html)
             print("Alert email sent.")
     if failures and len(failures) == len(cfg["date_windows"]) * len(cfg["airlines"]) * len(cfg["cabins"]) and not a.no_email and not a.mock:
         send_email("Flight tracker: all lookups failed", "\n".join(failures), None)
