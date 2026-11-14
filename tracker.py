@@ -242,7 +242,6 @@ def build_message(today, new_rows, cfg, all_rows):
                "on this route for your dates. If it becomes available, it will appear in this email automatically.")
     head = "This is an automated email from your flight price tracker."
     intro = f"Good news, your fares are in. Here's what we found for St. Louis to St. Thomas today, {date_text}."
-    workbook = "The attached workbook shows how each price has moved."
     check_q = "Does the price look right?"
     check_a = "Head to the airline's website now, because fares can change several times throughout the day."
     stop_q = "To stop these emails,"
@@ -254,7 +253,7 @@ def build_message(today, new_rows, cfg, all_rows):
         text += ["Pricing trend: " + trend_wait, ""]
     if why:
         text += ["Why only Business? " + why, ""]
-    text += [workbook, "", f"{check_q} {check_a}", "", stop_q + stop_a]
+    text += [f"{check_q} {check_a}", "", stop_q + stop_a]
     html = [f"<p><b>{head}</b></p>", f"<p>{intro}</p>", "<ul>" + "".join(f"<li>{l}</li>" for l in html_lines) + "</ul>",
             f"<p><b>Your alert level:</b> {level}</p>"]
     if trend_items:
@@ -263,7 +262,7 @@ def build_message(today, new_rows, cfg, all_rows):
         html.append(f"<p><b>Pricing trend:</b> {trend_wait}</p>")
     if why:
         html.append(f"<p><b>Why only Business?</b> {why}</p>")
-    html += [f"<p>{workbook}</p>", f"<p><b>{check_q}</b> {check_a}</p>", f"<p><b>{stop_q}</b>{stop_a}</p>"]
+    html += [f"<p><b>{check_q}</b> {check_a}</p>", f"<p><b>{stop_q}</b>{stop_a}</p>"]
     return "\n".join(text), "".join(html)
 
 
