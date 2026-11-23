@@ -58,6 +58,7 @@ What I did:
 What I did:
 
 - Turned on the daily schedule: the tracker checks fares every day at 7:00 AM Central and sends the alert email.
+- Tested alerts on my own inbox first, then switched them to the client.
 - Checked the first live emails and refined the wording before handing it to the client.
 - Walked the client through the solution and the email to see if any changes or tweaks were needed. None were.
 - Next step: we are now building up the historical prices so predictive AI can be layered on top.
