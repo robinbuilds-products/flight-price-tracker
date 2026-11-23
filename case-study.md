@@ -1,12 +1,14 @@
 # Case Study: Automating Flight Price Tracking Around the Holiday Price Drop
 
-Built with Microsoft Copilot in a single day: about two hours for the initial build, plus about an hour and a half of testing and refining the email message.
+Built with Microsoft Copilot in a single day: about three hours in total, including QA testing and refining the email message.
 
 ## The problem
 A client booking premium-cabin flights for two wanted to buy at the best moment, without a travel agent and without checking prices by hand every day. She also wanted to see how much, and in which direction, prices were changing, in dollars and percent. The flight price also decided when hotel prices could be finalized, so a missed drop delayed the whole trip plan.
 
 ## How it started
 The client first tried to build a tracker herself with Copilot in her personal Microsoft 365 account, as a way to learn to build with AI. She wasn't getting the results she wanted, so she asked me to build an AI flight tracker using Google Flights data.
+
+I had Copilot clarify what the issue was with her first attempt: Copilot couldn't get live Google Flights prices on its own. That told me the first job was finding a reliable price source. Before any build work started, I also asked the client what outcome she wanted. That outcome is what was delivered.
 
 ## Requirements
 - Two adults, round trip, St. Louis to St. Thomas, two April 2027 date windows
@@ -30,12 +32,12 @@ The AI tools generally don't buy airline content directly. They sit on top of ex
 **What the built-in tools don't cover:** a price history you can analyze, your own alert rules, and a comparison across both airlines, both cabins and both date windows. Fare data also doesn't include seat maps. That gap is why a custom tracker was still worth building.
 
 ## The first challenge
-The first challenge was finding a reliable way to get flight information that includes prices. Before building anything, I explored the options with Copilot and chose a solution first. We decided to build in GitHub rather than inside Copilot itself. That keeps the code in the Microsoft ecosystem and makes it easy to share with anyone who wants the same kind of tracker.
+The first challenge was finding a reliable way to get flight information that includes prices without paying for a service. Along the way, I learned why this is hard: booking data is often shared, but airlines only give live pricing to sellers that turn searches into bookings. This is called the look-to-book ratio, for example, one booking expected for every 1,500 searches. I explored the options with Copilot and chose a solution before building anything. We decided to build in GitHub rather than inside Copilot itself. GitHub is owned by Microsoft, so this keeps the code in the Microsoft ecosystem and makes it easy to share with anyone who wants the same kind of tracker.
 
 ## Approach
 1. **Rules first.** Search settings live in one config file, so changing dates, airlines, cabins or the alert level needs no code changes.
 2. **A data service instead of scraping.** Google Flights data comes through SerpApi. That avoids the sites the client dislikes, and scraping airline pages is fragile.
-3. **One search per option.** 2 date windows x 2 airlines x 2 cabins is 8 searches a day, about 240 a month.
+3. **One search per option.** 2 date windows x 2 airlines x 2 cabins is 8 searches a day, 240 to 248 a month. SerpApi's free plan allows 250 a month, so the daily run costs nothing. I also estimated the cost if the client wants the tracker to run longer to build up the price history.
 4. **Filter, then pick the lowest.** Each result is checked for the right airline and no overnight layovers before the cheapest qualifying fare is logged.
 5. **Plain-file history.** A CSV is the source of truth, and an Excel workbook is rebuilt from it each day with changes, drop flags, trend columns and a price chart.
 6. **A free daily schedule.** GitHub Actions runs the check at 7:00 AM Central, saves the data and sends the email through Gmail. Keys are stored as encrypted secrets, never in the code.
@@ -63,7 +65,7 @@ I checked the first live run against Google Flights in a browser. That caught pr
 ## Pricing trends and the road to AI prediction
 The tracker records every day's price. The workbook shows daily changes in dollars and percent, the lowest price so far and a 7-day average. This describes what has already happened. It does not forecast what will happen.
 
-AI price prediction needs months of daily data, including the holiday period, to be reliable. If the client wants to use the tracker again next year for the same trip, I can add prediction after about six months of data. The database has to fill up first.
+AI price prediction needs months of daily data, including the holiday period, to be reliable. We are now building up the price history so predictive AI can be layered on top. That needs about six months of data first, so the database has to fill up before prediction can be added.
 
 ## Safeguards
 - The tracker never books anything; a person makes the purchase.
@@ -76,13 +78,13 @@ AI price prediction needs months of daily data, including the holiday period, to
 - Prices from the data service can differ slightly from the airline's own site.
 - A target-price alert repeats daily while fares stay at or below the target.
 - Trends start after 7 days of data.
-- I have not confirmed that the free data-plan limit covers about 240 searches a month.
+- SerpApi's free plan allows 250 searches a month. At 8 a day, the tracker uses 240 to 248, which leaves little room for manual test runs.
 
 ## Outcome so far
-The tracker is delivered, tested and running once a day. Alerts currently go to me, as planned for the test phase. The open question is whether the client will want to use it. Results, including the day a drop is detected, its size and how the purchase price compares with the earliest price tracked, will be added here once the tracker has collected real data and the client has decided.
+The tracker is delivered, tested and running once a day. After the test phase, alerts were switched from my inbox to the client's, as planned. I walked the client through the solution and the email to see if any changes or tweaks were needed. None were. We are now building up the price history so predictive AI can be layered on top. Results, including the day a drop is detected, its size and how the purchase price compares with the earliest price tracked, will be added here once the client books.
 
 ## Cost and time
-- Time: about two hours for the initial build, plus about an hour and a half of testing and refining the email message, in one day.
+- Time: about three hours in total, including QA testing and refining the email message, in one day.
 - Cost: about one day's worth of Copilot Cowork usage.
 
 ## Lessons
